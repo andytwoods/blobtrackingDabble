@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script src="js/face-api.js"></script>
+</head>
+<body>
+<div style="position:fixed; z-index: 10000;">
+    <button id="switch-source" onclick="switchsource(this)">switch webcam/video</button>
+    <button id="switch-model" onclick="switchmodel(this)">switch model (now default)</button>
+    <script>
+        var current_source = 'video';
+        var switching_lock = false;
+
+        function switchsource(el) {
+            if(switching_lock) return;
+            function waiting(on){
+                if(on){
+                    switching_lock = true;
+                    el.style.background = 'red';
+                    el.diabled = true;
+                }
+                else{
+                    setTimeout(function(){
+                        switching_lock = false;
+                        el.style.background = 'white';
+                        el.disabled = false;
+                    }, 500);
+
+                }
+            }
+            waiting(true);
+            if (current_source === 'video') {
+                console.log('switching to webcam');
+                navigator.mediaDevices.getUserMedia({video: {}}).then(s => {
+                    video.srcObject = s;
+                    video.onloadedmetadata = () => {
+                        video.play();
+                    };
+                }).catch(e => {
+                    console.error(e);
+                });
+                current_source = 'webcam';
+
+            }
+            else if(current_source === 'webcam'){
+                console.log('switching to video');
+                video.srcObject = undefined;
+                video.src = videofile;
+                current_source = 'video';
+            }
+            waiting(false);
+        }
+
+        function switchmodel(el){
+            if(!model) model = 'default'
+            var new_model_i = models.indexOf(model) + 1;
+            model = models[new_model_i % (models.length)]
+            el.innerText  = 'switch model (now '+model+')';
+        }
+
+
+    </script>
+</div>
+
+<video id="video" onplay="video_playing_now()" controls autoplay muted loop
+       style="width: 100%!important;height: auto!important;">
+    <source src="output.mp4" type="video/mp4">
+</video>
+<script>
+    var models_loaded = false;
+    var video_playing = false;
+    var runloop = true;
+    var canvas;
+    var displaySize;
+    const videofile = 'output.mp4';
+    const video = document.getElementById('video');
+    var model = 'default';
+    var models = [model, 'mtcnnForwardParams', 'tinyfacedetector'];
+    function video_playing_now() {
+        video_playing = true;
+    }
+
+
+    document.addEventListener("DOMContentLoaded", function (event) {
+
+
+        async function init() {
+            const MODEL_URL = './facemodels';
+
+            await faceapi.loadSsdMobilenetv1Model(MODEL_URL);
+            await faceapi.loadFaceLandmarkModel(MODEL_URL);
+
+            await faceapi.loadMtcnnModel(MODEL_URL);
+            await faceapi.loadTinyFaceDetectorModel(MODEL_URL);
+            await faceapi.loadFaceRecognitionModel(MODEL_URL);
+
+        }
+
+        const mtcnnForwardParams = {
+            minFaceSize: 200
+        };
+
+        async function run() {
+            if (!models_loaded || !video_playing) return;
+
+            displaySize = {width: video.offsetWidth, height: video.offsetHeight};
+            canvas = faceapi.createCanvasFromMedia(video);
+            canvas.id = 'canvas';
+            canvas.style.position = 'absolute';
+            canvas.style.zIndex = '500';
+            canvas.style.left = '0';
+            canvas.style.top = '0';
+            document.body.append(canvas);
+            faceapi.matchDimensions(canvas, displaySize);
+
+            startloop();
+        }
+
+        function startloop() {
+            var interval = setInterval(async () => {
+                if (!runloop) {
+                    clearInterval(interval);
+                }
+
+                let detections;
+                if(model === 'default'){
+                    detections = await faceapi.detectAllFaces(video, new faceapi.SsdMobilenetv1Options());
+                }
+                else if(model === 'tinyfacedetector'){
+                    const input_size = 416;
+                    // https://github.com/justadudewhohacks/face-api.js/#tinyfacedetectoroptions
+                    // size at which image is processed, the smaller the faster,
+                    // but less precise in detecting smaller faces, must be divisible
+                    // by 32, common sizes are 128, 160, 224, 320, 416, 512, 608,
+                    // for face tracking via webcam I would recommend using smaller sizes,
+                    // e.g. 128, 160, for detecting smaller faces use larger sizes, e.g. 512, 608
+                    // default: 416
+                    detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions(input_size))
+                }
+                else if(model === 'mtcnnForwardParams') {
+                    detections = await faceapi.mtcnn(video, mtcnnForwardParams)
+                }
+                else{
+                    throw('unknown model requested: ' + model)
+                }
+
+                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+                faceapi.draw.drawDetections(canvas, resizedDetections);
+            }, 100);
+        }
+
+
+        init().then(() => {
+            models_loaded = true;
+            run();
+        });
+
+
+    });
+
+</script>
+
+</body>
+</html>
