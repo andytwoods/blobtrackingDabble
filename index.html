@@ -98,8 +98,11 @@
 
         }
 
+        //https://scholarworks.uark.edu/cgi/viewcontent.cgi?article=1073&context=csceuht
         const mtcnnForwardParams = {
-            minFaceSize: 200
+            minFaceSize: 200,
+            //scaleFactor: .5,
+            maxNumScales: 20
         };
 
         async function run() {
@@ -126,7 +129,8 @@
 
                 let detections;
                 if(model === 'default'){
-                    detections = await faceapi.detectAllFaces(video, new faceapi.SsdMobilenetv1Options());
+                    const minProbability = 0.05;
+                    detections = await faceapi.detectAllFaces(video, new faceapi.SsdMobilenetv1Options(), minProbability);
                 }
                 else if(model === 'tinyfacedetector'){
                     const input_size = 416;
